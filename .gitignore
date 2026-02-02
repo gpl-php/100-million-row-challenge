@@ -1,5 +1,7 @@
 vendor/
 data.csv
+data.json
+test-data-actual.json
 .idea
 .tempest
 composer.lock
