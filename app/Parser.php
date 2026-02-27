@@ -13,17 +13,8 @@ final class Parser
 
     public function parse(string $inputPath, string $outputPath): void
     {
-        $startTime = microtime(true);
         $this->read($inputPath);
-        $endTime = microtime(true);
-        $duration = $endTime - $startTime;
-        echo "Parsing completed in " . round($duration, 2) . " seconds.\n";
-
-        $startTime = microtime(true);
         $this->write($outputPath);
-        $endTime = microtime(true);
-        $duration = $endTime - $startTime;
-        echo "Writing completed in " . round($duration, 2) . " seconds.\n";
     }
 
     /**
