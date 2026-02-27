@@ -9,7 +9,7 @@ use SplFileObject;
 final class Parser
 {
     public $stats;
-    public const CPU_CORES = 8;
+    public const CPU_CORES = 4;
 
     public function parse(string $inputPath, string $outputPath): void
     {
@@ -126,8 +126,9 @@ final class Parser
     {
 
         $contents = $file->fread($blockSize);
-        $contents = str_replace('https://stitcher.io','',$contents);
-        $contents = preg_replace('/T.{14}/', '', $contents);
+        //$contents = str_replace('https://stitcher.io','',$contents);
+        //$contents = preg_replace('/T.{14}/', '', $contents);
+        $contents = preg_replace(['/https:\/\/stitcher\.io/', '/T.{14}/'], ['', ''], $contents);
         $lines = explode("\n", $contents);
 
         file_put_contents($tempFile, serialize(array_count_values($lines)));
