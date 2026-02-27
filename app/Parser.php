@@ -1,13 +1,184 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App;
 
-use Exception;
+use SplFileObject;
+use SplFixedArray;
+use App\Commands\Visit;
 
 final class Parser
 {
+    public $siteURLs;
+    public $stats;
+    public const CPU_CORES = 8;
+
+    public function __construct(){
+        $this->siteURLs = SplFixedArray::fromArray(
+            array_map(function($link){
+                return substr($link->uri,19);
+            },Visit::all())
+        );
+
+    }
+
     public function parse(string $inputPath, string $outputPath): void
     {
-        throw new Exception('TODO');
+        $startTime = microtime(true);
+        $this->read($inputPath);
+        $endTime = microtime(true);
+        $duration = $endTime - $startTime;
+        echo "Parsing completed in " . round($duration, 2) . " seconds.\n";
+
+        $startTime = microtime(true);
+        $this->write($outputPath);
+        $endTime = microtime(true);
+        $duration = $endTime - $startTime;
+        echo "Writing completed in " . round($duration, 2) . " seconds.\n";
+    }
+
+    /**
+     * Read input file stats and splits file into blocks to be processed in parallel.
+     *
+     * @param string $inputPath The path to the input file.
+     * @return void
+     */
+    private function read(string $inputPath): void
+    {
+        $file = new SplFileObject($inputPath);
+        $stat = $file->fstat();
+        $fileSize = $stat['size'];
+        $baseBlockSize = (int) ceil($fileSize / self::CPU_CORES);
+
+        $currentOffset = 0;
+        $pids = [];
+
+        for ($i = 0; $i < self::CPU_CORES; $i++) {
+            $endOffset = $currentOffset + $baseBlockSize;
+
+            if ($endOffset >= $fileSize) {
+                $endOffset = $fileSize;
+            } else {
+                $extra = $this->getExtraBlockSize($file, $endOffset);
+                $endOffset += $extra;
+            }
+
+            $length = $endOffset - $currentOffset;
+            $blockStart = $currentOffset;
+            $currentOffset = $endOffset;
+
+            if ($length <= 0) break;
+
+            $tempFile = tempnam(sys_get_temp_dir(), 'worker_' . $i . '_');
+            $tempFiles[$i] = $tempFile;
+
+            $pid = pcntl_fork();
+            if ($pid == -1) {
+                die('could not fork');
+            } else if ($pid) {
+                $pids[] = $pid;
+            } else {
+                $childFile = new SplFileObject($inputPath);
+                $childFile->fseek($blockStart);
+                $this->readBlock($childFile, $length, $tempFile);
+                exit(0);
+            }
+        }
+
+        foreach ($pids as $pid) {
+            pcntl_waitpid($pid, $status);
+        }
+
+        foreach ($tempFiles as $i => $tempFile) {
+            if (file_exists($tempFile)) {
+                $this->stats[$i] = unserialize(file_get_contents($tempFile));
+                unlink($tempFile);
+            }
+        }
+    }
+
+    /**
+     * Merges the stats from all workers and writes the final result to the output file.
+     *
+     * @param string $outputPath The path to the output file.
+     * @return void
+     */
+    private function write(string $outputPath): void
+    {
+        $merged = [];
+        foreach ($this->stats as $workerStats) {
+            foreach ($workerStats as $key => $count) {
+                $merged[$key] = ($merged[$key] ?? 0) + $count;
+            }
+        }
+
+        $result = [];
+        foreach ($merged as $key => $count) {
+            $commaPos = strrpos($key, ',');
+            if ($commaPos === false) continue;
+
+            $path = substr($key, 0, $commaPos);
+            $date = substr($key, $commaPos + 1);
+
+            if (!isset($result[$path])) {
+                $result[$path] = [];
+            }
+            $result[$path][$date] = ($result[$path][$date] ?? 0) + $count;
+        }
+
+        foreach ($result as &$dates) {
+            ksort($dates);
+        }
+        unset($dates);
+
+        file_put_contents($outputPath, json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * Reads a block of the file, processes its contents, and writes the results to a temporary file.
+     *
+     * @param SplFileObject $file The file object to read from.
+     * @param int $blockSize The size of the block to read.
+     * @param string $tempFile The path to the temporary file to write results to.
+     * @return void
+     */
+    private function readBlock(SplFileObject $file, int $blockSize, string $tempFile): void
+    {
+
+        $contents = $file->fread($blockSize);
+        $contents = str_replace('https://stitcher.io','',$contents);
+        $contents = preg_replace('/T.{14}/', '', $contents);
+        $lines = explode("\n", $contents);
+
+        file_put_contents($tempFile, serialize(array_count_values($lines)));
+    }
+
+    /**
+     * Reads extra bytes to ensure file pointer ends on newline character.
+     *
+     * @param SplFileObject $file The file object to read from.
+     * @param int $offset The offset to start reading from.
+     * @return int The number of extra bytes read to reach the next newline.
+     */
+    private function getExtraBlockSize(SplFileObject $file, int $offset): int
+    {
+        $file->fseek($offset);
+
+        if ($file->eof()) {
+            return 0;
+        }
+
+        $chunk = $file->fread(128);
+        if ($chunk === false || $chunk === '') {
+            return 0;
+        }
+
+        $position = strpos($chunk, "\n");
+        if ($position === false) {
+            return 0;
+        }
+
+        return $position + 1;
     }
 }
