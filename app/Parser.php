@@ -5,23 +5,11 @@ declare(strict_types=1);
 namespace App;
 
 use SplFileObject;
-use SplFixedArray;
-use App\Commands\Visit;
 
 final class Parser
 {
-    public $siteURLs;
     public $stats;
     public const CPU_CORES = 8;
-
-    public function __construct(){
-        $this->siteURLs = SplFixedArray::fromArray(
-            array_map(function($link){
-                return substr($link->uri,19);
-            },Visit::all())
-        );
-
-    }
 
     public function parse(string $inputPath, string $outputPath): void
     {
