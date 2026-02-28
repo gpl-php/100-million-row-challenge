@@ -127,7 +127,7 @@ final class Parser
     {
         $lines = [];
         while($line = $file->fgets()) {
-            $lines[] = substr($line, 19, -15);
+            $lines[] = substr($line, 19, -16);
 
             if($file->ftell() >= $endOffset) {
                 break;
