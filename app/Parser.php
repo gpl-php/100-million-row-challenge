@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace App;
 
 use SplFileObject;
+use App\Commands\Visit;
 
 final class Parser
 {
     public $stats;
-    public const CPU_CORES = 4;
+    public const CPU_CORES = 8;
 
     public function parse(string $inputPath, string $outputPath): void
     {
@@ -60,7 +61,7 @@ final class Parser
             } else {
                 $childFile = new SplFileObject($inputPath);
                 $childFile->fseek($blockStart);
-                $this->readBlock($childFile, $length, $tempFile);
+                $this->readBlock($childFile, $endOffset, $tempFile);
                 exit(0);
             }
         }
@@ -118,19 +119,20 @@ final class Parser
      * Reads a block of the file, processes its contents, and writes the results to a temporary file.
      *
      * @param SplFileObject $file The file object to read from.
-     * @param int $blockSize The size of the block to read.
+     * @param int $endOffset The offset to stop reading at.
      * @param string $tempFile The path to the temporary file to write results to.
      * @return void
      */
-    private function readBlock(SplFileObject $file, int $blockSize, string $tempFile): void
+    private function readBlock(SplFileObject $file, int $endOffset, string $tempFile): void
     {
+        $lines = [];
+        while($line = $file->fgets()) {
+            $lines[] = substr($line, 19, -15);
 
-        $contents = $file->fread($blockSize);
-        //$contents = str_replace('https://stitcher.io','',$contents);
-        //$contents = preg_replace('/T.{14}/', '', $contents);
-        $contents = preg_replace(['/https:\/\/stitcher\.io/', '/T.{14}/'], ['', ''], $contents);
-        $lines = explode("\n", $contents);
-
+            if($file->ftell() >= $endOffset) {
+                break;
+            }
+        }
         file_put_contents($tempFile, serialize(array_count_values($lines)));
     }
 
